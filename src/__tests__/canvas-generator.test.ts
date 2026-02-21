@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { generateCanvas } from "../generate/canvas-generator.js";
-import type { IRBoard, IRStickyNote, IRShape, IRFrame, IRImage, IRCard, IREmbed, IRText, IREdge } from "../model/types.js";
+import { generateCanvas } from "../generate/canvas/canvas-generator.js";
+import type { IRBoard, IRStickyNote, IRShape, IRFrame, IRImage, IRCard, IREmbed, IRText, IREdge, IRDocument, IRPreview } from "../model/types.js";
 
 function makeBoard(
   nodes: IRBoard["nodes"] = [],
@@ -308,6 +308,91 @@ describe("generateCanvas", () => {
     expect(result.nodes[0].y).toBe(200);
     expect(result.nodes[0].width).toBe(200);
     expect(result.nodes[0].height).toBe(229);
+  });
+
+  it("converts documents to text nodes (no local path)", () => {
+    const doc: IRDocument = {
+      id: "7",
+      type: "document",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 300,
+      rotation: 0,
+      title: "introduction-to-okrs.pdf",
+      documentUrl: "https://api.miro.com/v2/boards/xxx/resources/documents/123",
+    };
+
+    const result = JSON.parse(generateCanvas(makeBoard([doc])));
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0]).toMatchObject({
+      type: "text",
+      text: "📄 introduction-to-okrs.pdf",
+    });
+  });
+
+  it("converts documents with local path to file nodes", () => {
+    const doc: IRDocument = {
+      id: "7",
+      type: "document",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 300,
+      rotation: 0,
+      title: "standups.pdf",
+      documentUrl: "https://api.miro.com/...",
+    };
+
+    const board = makeBoard([doc], [], [
+      { id: "doc_7", miroUrl: "https://api.miro.com/...", localPath: "assets/doc_7.pdf" },
+    ]);
+    const result = JSON.parse(generateCanvas(board));
+    expect(result.nodes[0]).toMatchObject({
+      type: "file",
+      file: "assets/doc_7.pdf",
+    });
+  });
+
+  it("converts previews with URL to link nodes", () => {
+    const preview: IRPreview = {
+      id: "8",
+      type: "preview",
+      x: 100,
+      y: 200,
+      width: 250,
+      height: 346,
+      rotation: 0,
+      url: "https://example.com/article",
+      title: "Great Article",
+    };
+
+    const result = JSON.parse(generateCanvas(makeBoard([preview])));
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0]).toMatchObject({
+      type: "link",
+      url: "https://example.com/article",
+    });
+  });
+
+  it("converts previews without URL to text nodes", () => {
+    const preview: IRPreview = {
+      id: "8",
+      type: "preview",
+      x: 0,
+      y: 0,
+      width: 250,
+      height: 346,
+      rotation: 0,
+      url: "",
+      title: "Some Preview",
+    };
+
+    const result = JSON.parse(generateCanvas(makeBoard([preview])));
+    expect(result.nodes[0]).toMatchObject({
+      type: "text",
+      text: "🔗 Some Preview",
+    });
   });
 
   it("handles full board with mixed content", () => {

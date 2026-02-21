@@ -1,6 +1,6 @@
-import type { IRBoard, IRNode, IREdge, IRSide } from "../model/types.js";
-import { irColorToCanvasColor } from "../model/color-map.js";
-import { IdMap } from "../utils/id-map.js";
+import type { IRBoard, IRNode, IREdge, IRSide } from "../../model/types.js";
+import { irColorToCanvasColor } from "./canvas-color-map.js";
+import { IdMap } from "../../utils/id-map.js";
 
 // JSON Canvas types (jsoncanvas.org spec 1.0)
 
@@ -145,6 +145,26 @@ function convertNode(
 
     case "embed":
       return { ...base, type: "link", url: node.url || "" };
+
+    case "document": {
+      // Documents (PDFs) - if downloaded locally, use file node; otherwise link
+      const docAsset = assetMap.get(`doc_${node.id}`);
+      if (docAsset?.localPath) {
+        return { ...base, type: "file", file: docAsset.localPath };
+      }
+      // Fall back to a text node with the title as a label
+      return { ...base, type: "text", text: `📄 ${node.title}` };
+    }
+
+    case "preview": {
+      // URL preview/bookmark cards
+      if (node.url) {
+        return { ...base, type: "link", url: node.url };
+      }
+      // If no URL available, show as text with title
+      const label = node.title || "Preview";
+      return { ...base, type: "text", text: `🔗 ${label}` };
+    }
 
     default:
       return null;

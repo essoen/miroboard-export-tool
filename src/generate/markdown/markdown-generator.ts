@@ -1,4 +1,4 @@
-import type { IRBoard, IRNode } from "../model/types.js";
+import type { IRBoard, IRNode } from "../../model/types.js";
 
 interface MarkdownFile {
   filename: string;
@@ -16,11 +16,13 @@ export function generateMarkdown(
   const files: MarkdownFile[] = [];
   const usedFilenames = new Set<string>();
 
-  // Filter to content-bearing nodes (sticky notes, cards, text with substantial content)
+  // Filter to content-bearing nodes (sticky notes, cards, text with substantial content, documents, previews with URLs)
   const contentNodes = board.nodes.filter(
     (n) =>
       n.type === "sticky_note" ||
       n.type === "card" ||
+      n.type === "document" ||
+      (n.type === "preview" && (n.url || n.title)) ||
       (n.type === "text" && getNodeContent(n).length > 20),
   );
 
@@ -61,6 +63,10 @@ function getNodeContent(node: IRNode): string {
       return node.content;
     case "shape":
       return node.content || "";
+    case "document":
+      return node.title;
+    case "preview":
+      return node.title || node.url || "Preview";
     default:
       return "";
   }
@@ -102,6 +108,18 @@ function buildBody(node: IRNode): string {
     }
     case "text":
       return node.content;
+    case "document":
+      return `# 📄 ${node.title}\n\nEmbedded document from Miro board.`;
+    case "preview": {
+      let body = `# 🔗 ${node.title || "Link Preview"}`;
+      if (node.url) {
+        body += `\n\n[${node.title || node.url}](${node.url})`;
+      }
+      if (node.description) {
+        body += `\n\n${node.description}`;
+      }
+      return body;
+    }
     default:
       return "";
   }

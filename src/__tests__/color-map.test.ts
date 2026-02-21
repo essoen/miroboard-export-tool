@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseMiroColor, irColorToCanvasColor } from "../model/color-map.js";
+import { parseMiroColor } from "../model/color.js";
+import { irColorToCanvasColor } from "../generate/canvas/canvas-color-map.js";
 
 describe("parseMiroColor", () => {
   it("parses named Miro colors", () => {
