@@ -11,9 +11,12 @@ import type {
   IRImage,
   IRCard,
   IREmbed,
+  IRDocument,
+  IRPreview,
   IREndCap,
+  ExtractionStats,
 } from "../model/types.js";
-import { parseMiroColor } from "../model/color-map.js";
+import { parseMiroColor } from "../model/color.js";
 import {
   miroToTopLeft,
   normalizeToPositiveSpace,
@@ -22,12 +25,29 @@ import { htmlToMarkdown } from "../utils/html-to-markdown.js";
 import { RateLimiter } from "../utils/rate-limiter.js";
 import { downloadImage } from "./image-downloader.js";
 
+export type ProgressPhase = "items" | "connectors" | "details" | "assets";
+
+export interface ProgressEvent {
+  phase: ProgressPhase;
+  current: number;
+  total?: number; // Unknown for items/connectors (streaming), known for assets
+  message?: string;
+}
+
 export interface ExtractOptions {
   token: string;
   boardId: string;
   downloadImages?: boolean;
   outputDir?: string;
   verbose?: boolean;
+  onProgress?: (event: ProgressEvent) => void;
+  /** Prefix for asset paths in generated output (e.g. "miro-import/" for vault-relative paths) */
+  assetPathPrefix?: string;
+}
+
+export interface ExtractionResult {
+  board: IRBoard;
+  stats: ExtractionStats;
 }
 
 /**
@@ -35,9 +55,22 @@ export interface ExtractOptions {
  */
 export async function extractBoard(
   options: ExtractOptions,
-): Promise<IRBoard> {
-  const { token, boardId, downloadImages = true, outputDir, verbose } = options;
+): Promise<ExtractionResult> {
+  const { token, boardId, downloadImages = true, outputDir, verbose, onProgress, assetPathPrefix } = options;
   const log = verbose ? console.log.bind(console) : () => {};
+  const progress = onProgress || (() => {});
+
+  // Track extraction stats
+  const stats: ExtractionStats = {
+    totalApiItems: 0,
+    convertedNodes: 0,
+    skippedItems: [],
+    droppedConnectors: 0,
+    totalApiConnectors: 0,
+    filteredPreviews: 0,
+    failedAssetDownloads: [],
+    failedDetailFetches: [],
+  };
 
   const api = new MiroApi(token);
   const board = await api.getBoard(boardId);
@@ -51,16 +84,22 @@ export async function extractBoard(
   const assets: IRAsset[] = [];
   const frameChildMap = new Map<string, string[]>(); // frameId -> childIds
 
+  // Track raw Miro items for parent-relative coordinate resolution
+  const rawItems: Array<{ item: any; node: IRNode }> = [];
+
   log("Fetching items...");
   let itemCount = 0;
 
   for await (const item of board.getAllItems()) {
     await rateLimiter.acquire();
     itemCount++;
+    progress({ phase: "items", current: itemCount });
 
     const node = convertItem(item);
     if (node) {
       nodes.push(node);
+      rawItems.push({ item, node });
+      stats.convertedNodes++;
 
       // Track parent-child relationships for frames
       const parentId = (item as any).parent?.id;
@@ -77,38 +116,183 @@ export async function extractBoard(
           miroUrl: (item as any).data?.imageUrl || "",
         });
       }
+
+      // Track document assets (PDFs)
+      if (node.type === "document") {
+        assets.push({
+          id: `doc_${node.id}`,
+          miroUrl: (item as any).data?.documentUrl || "",
+        });
+      }
+    } else {
+      // Track skipped items (unsupported types like emoji, app_card)
+      const itemType = item.type || "unknown";
+      const itemId = item.id?.toString() || "?";
+      stats.skippedItems.push({ type: itemType, id: itemId });
     }
   }
 
+  stats.totalApiItems = itemCount;
   log(`Fetched ${itemCount} items, converted ${nodes.length} nodes`);
 
+  // === Detail-fetch: style data + preview URLs ===
+  // The bulk getAllItems() omits style fields for sticky_note/text/shape,
+  // and returns no data for preview items.
+  // Type-specific v2 endpoints return full style data (fillColor, fontSize, etc).
+  // Preview URLs are only available via the v1 REST API.
+  const needsStyleDetail = rawItems.filter(({ node }) =>
+    node.type === "sticky_note" || node.type === "text" || node.type === "shape",
+  );
+  const needsPreviewDetail = rawItems.filter(({ node }) => node.type === "preview");
+  const totalDetails = needsStyleDetail.length + needsPreviewDetail.length;
+
+  if (totalDetails > 0) {
+    log(`Fetching details for ${totalDetails} items (${needsStyleDetail.length} styled, ${needsPreviewDetail.length} previews)...`);
+    let detailCount = 0;
+
+    // Pass 1: Style details via v2 typed endpoints
+    for (const { node } of needsStyleDetail) {
+      detailCount++;
+      progress({ phase: "details", current: detailCount, total: totalDetails });
+      try {
+        await rateLimiter.acquire();
+        let detail: any;
+        switch (node.type) {
+          case "sticky_note":
+            detail = (await (board as any)._api.getStickyNoteItem(boardId, node.id)).body;
+            break;
+          case "text":
+            detail = (await (board as any)._api.getTextItem(boardId, node.id)).body;
+            break;
+          case "shape":
+            detail = (await (board as any)._api.getShapeItem(boardId, node.id)).body;
+            break;
+        }
+        if (detail?.style) {
+          const fillColor = detail.style.fillColor;
+          if (fillColor) {
+            (node as any).color = parseMiroColor(fillColor);
+          }
+          if (node.type === "sticky_note") {
+            const sn = node as IRStickyNote;
+            sn.textAlign = detail.style.textAlign || sn.textAlign;
+          }
+          if (node.type === "text") {
+            const tn = node as IRText;
+            tn.fontSize = detail.style.fontSize ? parseFloat(detail.style.fontSize) : tn.fontSize;
+            tn.fontFamily = detail.style.fontFamily || tn.fontFamily;
+          }
+          if (node.type === "shape") {
+            const sn = node as IRShape;
+            sn.borderColor = detail.style.borderColor || sn.borderColor;
+            sn.borderWidth = detail.style.borderWidth ? parseFloat(detail.style.borderWidth) : sn.borderWidth;
+            sn.borderStyle = detail.style.borderStyle || sn.borderStyle;
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        stats.failedDetailFetches.push({ type: node.type, id: node.id, error: msg });
+        log(`  Warning: Failed to fetch detail for ${node.type} ${node.id}: ${err}`);
+      }
+    }
+
+    // Pass 2: Preview URLs via Miro v1 REST API
+    // v2 API returns isSupported:false for previews; v1 /widgets/{id} returns url+title.
+    for (const { node } of needsPreviewDetail) {
+      detailCount++;
+      progress({ phase: "details", current: detailCount, total: totalDetails });
+      try {
+        await rateLimiter.acquire();
+        const resp = await fetch(
+          `https://api.miro.com/v1/boards/${boardId}/widgets/${node.id}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (resp.ok) {
+          const data = (await resp.json()) as { url?: string; title?: string };
+          const preview = node as IRPreview;
+          preview.url = data.url || preview.url;
+          preview.title = data.title || preview.title;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        stats.failedDetailFetches.push({ type: "preview", id: node.id, error: msg });
+        log(`  Warning: Failed to fetch preview detail for ${node.id}: ${err}`);
+      }
+    }
+
+    log(`Detail-fetch complete`);
+  }
+
+  // Remove preview items that still have no URL (useless without links)
+  const filteredNodes = nodes.filter((n) => {
+    if (n.type === "preview" && !(n as IRPreview).url) return false;
+    return true;
+  });
+  stats.filteredPreviews = nodes.length - filteredNodes.length;
+  if (stats.filteredPreviews > 0) {
+    log(`Filtered out ${stats.filteredPreviews} preview items without URLs`);
+  }
+
   // Fill in frame childIds
-  for (const node of nodes) {
+  for (const node of filteredNodes) {
     if (node.type === "frame") {
       node.childIds = frameChildMap.get(node.id) || [];
+    }
+  }
+
+  // Resolve parent-relative coordinates to absolute board coordinates.
+  // Items with position.relativeTo === "parent_top_left" have coordinates
+  // relative to their parent frame's top-left corner, not the board center.
+  // We need to convert these to board-absolute coordinates.
+  const nodeById = new Map(filteredNodes.map((n) => [n.id, n]));
+  for (const { item, node } of rawItems) {
+    const pos = item.position;
+    if (pos?.relativeTo === "parent_top_left" && node.parentId) {
+      const parent = nodeById.get(node.parentId);
+      if (parent) {
+        // Parent was already converted via miroToTopLeft (center→top-left of parent).
+        // The child's Miro position is center-of-child relative to parent's top-left.
+        // Our convertItem already did miroToTopLeft on the child's position,
+        // giving us (childCenter.x - childW/2, childCenter.y - childH/2).
+        // That's the child's top-left *relative to parent's top-left*.
+        // We need to add the parent's absolute top-left position.
+        node.x += parent.x;
+        node.y += parent.y;
+      }
     }
   }
 
   // Collect all connectors
   log("Fetching connectors...");
   const edges: IREdge[] = [];
+  let connectorCount = 0;
 
   for await (const connector of board.getAllConnectors()) {
     await rateLimiter.acquire();
+    connectorCount++;
+    progress({ phase: "connectors", current: connectorCount });
 
     const edge = convertConnector(connector);
     if (edge) {
       edges.push(edge);
+    } else {
+      stats.droppedConnectors++;
     }
   }
 
-  log(`Fetched ${edges.length} connectors`);
+  stats.totalApiConnectors = connectorCount;
+  log(`Fetched ${edges.length} connectors (${stats.droppedConnectors} dropped)`);
 
   // Download images if requested
   if (downloadImages && outputDir && assets.length > 0) {
-    log(`Downloading ${assets.length} images...`);
+    log(`Downloading ${assets.length} assets...`);
+    let downloadCount = 0;
+    const downloadTotal = assets.filter((a) => a.miroUrl).length;
+
     for (const asset of assets) {
       if (asset.miroUrl) {
+        downloadCount++;
+        progress({ phase: "assets", current: downloadCount, total: downloadTotal, message: asset.id });
         try {
           await rateLimiter.acquire();
           const localPath = await downloadImage(
@@ -116,30 +300,36 @@ export async function extractBoard(
             outputDir,
             asset.id,
             token,
+            assetPathPrefix,
           );
           asset.localPath = localPath;
           log(`  Downloaded: ${localPath}`);
         } catch (err) {
-          log(`  Warning: Failed to download image ${asset.id}: ${err}`);
+          const msg = err instanceof Error ? err.message : String(err);
+          stats.failedAssetDownloads.push({ id: asset.id, error: msg });
+          log(`  Warning: Failed to download asset ${asset.id}: ${err}`);
         }
       }
     }
   }
 
   // Normalize coordinates to positive space
-  normalizeToPositiveSpace(nodes);
+  normalizeToPositiveSpace(filteredNodes);
 
   const boardUrl = `https://miro.com/app/board/${boardId}/`;
 
   return {
-    id: boardId,
-    name: board.name || "Untitled Board",
-    description: board.description || undefined,
-    sourceUrl: boardUrl,
-    extractedAt: new Date().toISOString(),
-    nodes,
-    edges,
-    assets,
+    board: {
+      id: boardId,
+      name: board.name || "Untitled Board",
+      description: board.description || undefined,
+      sourceUrl: boardUrl,
+      extractedAt: new Date().toISOString(),
+      nodes: filteredNodes,
+      edges,
+      assets,
+    },
+    stats,
   };
 }
 
@@ -253,8 +443,31 @@ function convertItem(item: any): IRNode | null {
       } satisfies IREmbed;
     }
 
+    case "document": {
+      const data = item.data || {};
+      return {
+        ...base,
+        type: "document",
+        title: data.title || "Document",
+        documentUrl: data.documentUrl || "",
+      } satisfies IRDocument;
+    }
+
+    case "preview": {
+      // Preview items (URL/bookmark cards) often lack data in bulk listing.
+      // We store position/size; the URL may need a detail fetch.
+      const data = item.data || {};
+      return {
+        ...base,
+        type: "preview",
+        url: data.url || "",
+        title: data.title || "",
+        description: data.description || "",
+      } satisfies IRPreview;
+    }
+
     default:
-      // Unsupported type (app_card, document, preview) - skip with warning
+      // Unsupported type (app_card, emoji, etc.) - skip
       return null;
   }
 }

@@ -23,7 +23,9 @@ export type IRNodeType =
   | "frame"
   | "image"
   | "card"
-  | "embed";
+  | "embed"
+  | "document"
+  | "preview";
 
 export interface IRNodeBase {
   id: string;
@@ -87,6 +89,19 @@ export interface IREmbed extends IRNodeBase {
   title?: string;
 }
 
+export interface IRDocument extends IRNodeBase {
+  type: "document";
+  title: string; // e.g. "introduction-to-okrs.pdf"
+  documentUrl: string; // Miro API URL to download the document
+}
+
+export interface IRPreview extends IRNodeBase {
+  type: "preview";
+  url: string; // The previewed URL (may be empty in bulk listing)
+  title?: string;
+  description?: string;
+}
+
 export type IRNode =
   | IRStickyNote
   | IRShape
@@ -94,7 +109,9 @@ export type IRNode =
   | IRFrame
   | IRImage
   | IRCard
-  | IREmbed;
+  | IREmbed
+  | IRDocument
+  | IRPreview;
 
 // --- Edges ---
 
@@ -137,4 +154,25 @@ export interface IRTag {
   id: string;
   title: string;
   color?: string;
+}
+
+// --- Extraction Stats ---
+
+export interface ExtractionStats {
+  /** Total items returned by Miro API */
+  totalApiItems: number;
+  /** Items converted to IR nodes */
+  convertedNodes: number;
+  /** Items skipped due to unsupported type (e.g. emoji, app_card) */
+  skippedItems: Array<{ type: string; id: string }>;
+  /** Connectors dropped because start or end item was missing */
+  droppedConnectors: number;
+  /** Total connectors from API */
+  totalApiConnectors: number;
+  /** Preview items filtered out (no URL even after detail-fetch) */
+  filteredPreviews: number;
+  /** Asset downloads that failed */
+  failedAssetDownloads: Array<{ id: string; error: string }>;
+  /** Detail-fetch failures */
+  failedDetailFetches: Array<{ type: string; id: string; error: string }>;
 }
