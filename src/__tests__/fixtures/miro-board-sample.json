@@ -1,0 +1,175 @@
+{
+  "board": {
+    "id": "uXjVNtest123",
+    "name": "Test Board",
+    "description": "A sample board for testing migration"
+  },
+  "items": [
+    {
+      "id": "3458764553892921001",
+      "type": "sticky_note",
+      "data": {
+        "content": "<p>First sticky note</p>",
+        "shape": "square"
+      },
+      "style": {
+        "fillColor": "light_yellow",
+        "textAlign": "center",
+        "textAlignVertical": "middle"
+      },
+      "position": { "x": -200, "y": -100, "origin": "center", "relativeTo": "canvas_center" },
+      "geometry": { "width": 199, "height": 228, "rotation": 0 },
+      "parent": null,
+      "createdAt": "2024-03-15T10:30:00.000Z",
+      "modifiedAt": "2024-03-16T14:20:00.000Z"
+    },
+    {
+      "id": "3458764553892921002",
+      "type": "sticky_note",
+      "data": {
+        "content": "<p>Second note in frame</p>",
+        "shape": "square"
+      },
+      "style": {
+        "fillColor": "light_green",
+        "textAlign": "left",
+        "textAlignVertical": "top"
+      },
+      "position": { "x": 500, "y": 200, "origin": "center", "relativeTo": "canvas_center" },
+      "geometry": { "width": 199, "height": 228, "rotation": 0 },
+      "parent": { "id": "3458764553892921006" },
+      "createdAt": "2024-03-15T11:00:00.000Z",
+      "modifiedAt": "2024-03-15T11:00:00.000Z"
+    },
+    {
+      "id": "3458764553892921003",
+      "type": "shape",
+      "data": {
+        "content": "<p>Process Step</p>",
+        "shape": "flow_chart_process"
+      },
+      "style": {
+        "fillColor": "#ffffff",
+        "borderColor": "#1a1a1a",
+        "borderWidth": "2",
+        "borderStyle": "normal",
+        "color": "#1a1a1a",
+        "fontSize": "14",
+        "fontFamily": "open_sans",
+        "textAlign": "center",
+        "textAlignVertical": "middle"
+      },
+      "position": { "x": 100, "y": -100, "origin": "center", "relativeTo": "canvas_center" },
+      "geometry": { "width": 168, "height": 120, "rotation": 0 },
+      "parent": null,
+      "createdAt": "2024-03-15T12:00:00.000Z",
+      "modifiedAt": "2024-03-15T12:00:00.000Z"
+    },
+    {
+      "id": "3458764553892921004",
+      "type": "shape",
+      "data": {
+        "content": "",
+        "shape": "circle"
+      },
+      "style": {
+        "fillColor": "#4fc1e8",
+        "borderColor": "#2d9bf0",
+        "borderWidth": "1",
+        "borderStyle": "normal"
+      },
+      "position": { "x": 400, "y": -100, "origin": "center", "relativeTo": "canvas_center" },
+      "geometry": { "width": 100, "height": 100, "rotation": 0 },
+      "parent": null,
+      "createdAt": "2024-03-15T12:30:00.000Z",
+      "modifiedAt": "2024-03-15T12:30:00.000Z"
+    },
+    {
+      "id": "3458764553892921005",
+      "type": "text",
+      "data": {
+        "content": "<p>Board title text</p>"
+      },
+      "style": {
+        "color": "#1a1a1a",
+        "fillColor": "transparent",
+        "fontSize": "24",
+        "fontFamily": "open_sans",
+        "textAlign": "left"
+      },
+      "position": { "x": -200, "y": -300, "origin": "center", "relativeTo": "canvas_center" },
+      "geometry": { "width": 300, "height": 50, "rotation": 0 },
+      "parent": null,
+      "createdAt": "2024-03-15T10:00:00.000Z",
+      "modifiedAt": "2024-03-15T10:00:00.000Z"
+    },
+    {
+      "id": "3458764553892921006",
+      "type": "frame",
+      "data": {
+        "title": "Planning Section",
+        "type": "freeform",
+        "format": "custom"
+      },
+      "style": {},
+      "position": { "x": 500, "y": 200, "origin": "center", "relativeTo": "canvas_center" },
+      "geometry": { "width": 600, "height": 400, "rotation": 0 },
+      "parent": null,
+      "createdAt": "2024-03-15T10:00:00.000Z",
+      "modifiedAt": "2024-03-15T10:00:00.000Z"
+    },
+    {
+      "id": "3458764553892921007",
+      "type": "image",
+      "data": {
+        "imageUrl": "https://miro-uploads.example.com/image123.png",
+        "title": "Architecture diagram"
+      },
+      "style": {},
+      "position": { "x": -200, "y": 300, "origin": "center", "relativeTo": "canvas_center" },
+      "geometry": { "width": 400, "height": 300, "rotation": 0 },
+      "parent": null,
+      "createdAt": "2024-03-15T14:00:00.000Z",
+      "modifiedAt": "2024-03-15T14:00:00.000Z"
+    }
+  ],
+  "connectors": [
+    {
+      "id": "3458764553892921101",
+      "startItem": { "id": "3458764553892921001" },
+      "endItem": { "id": "3458764553892921003" },
+      "shape": "curved",
+      "style": {
+        "strokeColor": "#000000",
+        "strokeWidth": "1.0",
+        "strokeStyle": "normal",
+        "startStrokeCap": "none",
+        "endStrokeCap": "stealth",
+        "color": "#1a1a1a",
+        "fontSize": "14",
+        "textOrientation": "horizontal"
+      },
+      "captions": [
+        { "content": "leads to", "position": 0.5 }
+      ],
+      "createdAt": "2024-03-15T13:00:00.000Z",
+      "modifiedAt": "2024-03-15T13:00:00.000Z"
+    },
+    {
+      "id": "3458764553892921102",
+      "startItem": { "id": "3458764553892921003" },
+      "endItem": { "id": "3458764553892921004" },
+      "shape": "straight",
+      "style": {
+        "strokeColor": "#2d9bf0",
+        "strokeWidth": "2.0",
+        "strokeStyle": "dashed",
+        "startStrokeCap": "none",
+        "endStrokeCap": "arrow"
+      },
+      "captions": [],
+      "createdAt": "2024-03-15T13:30:00.000Z",
+      "modifiedAt": "2024-03-15T13:30:00.000Z"
+    }
+  ]
+}
