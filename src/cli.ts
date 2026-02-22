@@ -1,5 +1,6 @@
 import { Command } from "commander";
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join, basename, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { extractBoard } from "./extract/miro-extractor.js";
@@ -8,6 +9,17 @@ import { generateMarkdown } from "./generate/markdown/markdown-generator.js";
 import { generateTldraw } from "./generate/tldraw/tldraw-generator.js";
 import { wrapTldrawForObsidian } from "./generate/tldraw/tldraw-obsidian-wrapper.js";
 import { createProgressHandler, finishProgress } from "./utils/progress.js";
+
+/**
+ * Read Miro token from a `token` file in cwd, if it exists.
+ * Returns the trimmed contents or undefined.
+ */
+async function readTokenFile(): Promise<string | undefined> {
+  const tokenPath = join(process.cwd(), "token");
+  if (!existsSync(tokenPath)) return undefined;
+  const content = (await readFile(tokenPath, "utf-8")).trim();
+  return content || undefined;
+}
 
 /**
  * Parse a Miro board URL or ID into a board ID.
@@ -63,13 +75,16 @@ async function promptOptions(boardId: string): Promise<InteractiveOptions> {
 
     // Token
     const envToken = process.env.MIRO_ACCESS_TOKEN;
-    let token = envToken || "";
-    if (!envToken) {
+    const fileToken = !envToken ? await readTokenFile() : undefined;
+    let token = envToken || fileToken || "";
+    if (!envToken && !fileToken) {
       token = await rl.question("  Miro access token: ");
       if (!token.trim()) {
         console.error("  Error: Token is required.");
         process.exit(1);
       }
+    } else if (fileToken && !envToken) {
+      console.log("  Token: using token file");
     } else {
       console.log("  Token: using MIRO_ACCESS_TOKEN from env");
     }
@@ -151,7 +166,8 @@ export function createCli(): Command {
     )
     .action(async (boardInput: string, options) => {
       const boardId = parseBoardId(boardInput);
-      const interactive = !hasExplicitOptions(options) && !process.env.MIRO_ACCESS_TOKEN;
+      const fileToken = !process.env.MIRO_ACCESS_TOKEN ? await readTokenFile() : undefined;
+      const interactive = !hasExplicitOptions(options) && !process.env.MIRO_ACCESS_TOKEN && !fileToken;
 
       let token: string;
       let formats: string[];
@@ -172,11 +188,11 @@ export function createCli(): Command {
         downloadImages = prompted.downloadImages;
         tldrawFormat = prompted.tldrawFormat;
       } else {
-        // Options provided via flags / env — use them directly
-        token = options.token || process.env.MIRO_ACCESS_TOKEN;
+        // Options provided via flags / env / token file — use them directly
+        token = options.token || process.env.MIRO_ACCESS_TOKEN || fileToken;
         if (!token) {
           console.error(
-            "Error: Miro access token required. Use --token or set MIRO_ACCESS_TOKEN.",
+            "Error: Miro access token required. Use --token, set MIRO_ACCESS_TOKEN, or put it in a 'token' file.",
           );
           process.exit(1);
         }
