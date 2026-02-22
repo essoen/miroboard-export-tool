@@ -192,10 +192,16 @@ const TLDRAW_SCHEMA = {
 
 // --- Main generator ---
 
+export interface TldrawOptions {
+  /** Use local file paths for assets (for Obsidian). When false, uses Miro URLs (for tldraw.com). Default: false. */
+  useLocalAssets?: boolean;
+}
+
 /**
  * Generate a .tldr file (tldraw JSON) from an IR board.
  */
-export function generateTldraw(board: IRBoard): string {
+export function generateTldraw(board: IRBoard, options: TldrawOptions = {}): string {
+  const { useLocalAssets = false } = options;
   // Reset state for each generation
   resetIds();
   shapeIdMap.clear();
@@ -255,8 +261,12 @@ export function generateTldraw(board: IRBoard): string {
     }
   }
 
-  // Asset records for images
-  const assetRecords = convertAssets(board.assets, board.nodes);
+  // Asset records for images (skip PDFs — tldraw can't render them)
+  const imageAssets = board.assets.filter((a) => {
+    const ext = (a.localPath || a.miroUrl || "").split(".").pop()?.toLowerCase();
+    return ext !== "pdf";
+  });
+  const assetRecords = convertAssets(imageAssets, board.nodes, useLocalAssets);
   records.push(...assetRecords);
 
   const file: TldrawFile = {
@@ -572,6 +582,7 @@ function convertEdge(
 function convertAssets(
   assets: IRAsset[],
   nodes: IRNode[],
+  useLocalAssets: boolean,
 ): TldrawAssetRecord[] {
   const records: TldrawAssetRecord[] = [];
 
@@ -581,16 +592,19 @@ function convertAssets(
       (n) => n.type === "image" && n.assetId === asset.id,
     );
 
-    // Determine mime type from localPath extension
+    // Determine src: local path for Obsidian, Miro URL for tldraw.com
+    const src = useLocalAssets
+      ? (asset.localPath || asset.miroUrl || "")
+      : (asset.miroUrl || asset.localPath || "");
+
+    // Determine mime type from file path extension
+    const pathForExt = asset.localPath || asset.miroUrl || "";
     let mimeType = "image/png";
-    if (asset.localPath) {
-      const ext = asset.localPath.split(".").pop()?.toLowerCase();
-      if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
-      else if (ext === "svg") mimeType = "image/svg+xml";
-      else if (ext === "gif") mimeType = "image/gif";
-      else if (ext === "webp") mimeType = "image/webp";
-      else if (ext === "pdf") mimeType = "application/pdf";
-    }
+    const ext = pathForExt.split(".").pop()?.toLowerCase();
+    if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
+    else if (ext === "svg") mimeType = "image/svg+xml";
+    else if (ext === "gif") mimeType = "image/gif";
+    else if (ext === "webp") mimeType = "image/webp";
 
     records.push({
       id: `asset:${asset.id}`,
@@ -598,7 +612,7 @@ function convertAssets(
       type: "image",
       props: {
         name: asset.localPath || asset.id,
-        src: asset.localPath || asset.miroUrl || "",
+        src,
         w: imageNode ? Math.round(imageNode.width) : 200,
         h: imageNode ? Math.round(imageNode.height) : 200,
         mimeType,

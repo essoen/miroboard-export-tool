@@ -272,15 +272,15 @@ export function createCli(): Command {
 
       // Generate tldraw
       if (formats.includes("tldraw")) {
-        const tldrJson = generateTldraw(board);
-
         if (tldrawFormat === "tldr" || tldrawFormat === "both") {
+          const tldrJson = generateTldraw(board, { useLocalAssets: false });
           const tldrPath = join(outputDir, `${boardBasename}.tldr`);
           await writeFile(tldrPath, tldrJson, "utf-8");
           console.log(`Written: ${tldrPath}`);
         }
 
         if (tldrawFormat === "obsidian" || tldrawFormat === "both") {
+          const tldrJson = generateTldraw(board, { useLocalAssets: true });
           const obsidianMd = wrapTldrawForObsidian(tldrJson);
           const tldrawMdPath = join(outputDir, `${boardBasename}.tldraw.md`);
           await writeFile(tldrawMdPath, obsidianMd, "utf-8");

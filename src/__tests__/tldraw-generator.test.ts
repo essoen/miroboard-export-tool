@@ -251,8 +251,53 @@ describe("generateTldraw", () => {
       typeName: "asset",
       type: "image",
     });
-    expect(assets[0].props.src).toBe("assets/img_5.png");
+    // Default (useLocalAssets: false) uses Miro URL
+    expect(assets[0].props.src).toBe("https://miro.example.com/img.png");
     expect(assets[0].props.mimeType).toBe("image/png");
+  });
+
+  it("uses local paths when useLocalAssets is true", () => {
+    const image: IRImage = {
+      id: "5",
+      type: "image",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+      rotation: 0,
+      assetId: "img_5",
+    };
+
+    const board = makeBoard(
+      [image],
+      [],
+      [{ id: "img_5", miroUrl: "https://miro.example.com/img.png", localPath: "assets/img_5.png" }],
+    );
+    const result = JSON.parse(generateTldraw(board, { useLocalAssets: true }));
+    const assets = getAssets(result);
+    expect(assets[0].props.src).toBe("assets/img_5.png");
+  });
+
+  it("skips PDF assets", () => {
+    const image: IRImage = {
+      id: "5",
+      type: "image",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 200,
+      rotation: 0,
+      assetId: "doc_5",
+    };
+
+    const board = makeBoard(
+      [image],
+      [],
+      [{ id: "doc_5", miroUrl: "https://api.miro.com/doc.pdf", localPath: "assets/doc_5.pdf" }],
+    );
+    const result = parseTldraw(board);
+    const assets = getAssets(result);
+    expect(assets).toHaveLength(0);
   });
 
   it("detects mime types from file extensions", () => {
