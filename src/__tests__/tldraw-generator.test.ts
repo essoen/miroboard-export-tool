@@ -95,7 +95,7 @@ describe("generateTldraw", () => {
       y: 200,
     });
     expect(shapes[0].props.color).toBe("yellow");
-    expect(shapes[0].props.richText.content[0].content[0].text).toBe("Hello world");
+    expect(shapes[0].props.text).toBe("Hello world");
   });
 
   it("converts shapes to geo shapes", () => {
@@ -190,7 +190,7 @@ describe("generateTldraw", () => {
       y: 60,
     });
     expect(shapes[0].props.w).toBe(300);
-    expect(shapes[0].props.richText.content[0].content[0].text).toBe("Title text");
+    expect(shapes[0].props.text).toBe("Title text");
   });
 
   it("converts frames to frame shapes", () => {
@@ -338,7 +338,7 @@ describe("generateTldraw", () => {
     const result = parseTldraw(makeBoard([card]));
     const shapes = getShapes(result);
     expect(shapes[0].type).toBe("note");
-    expect(shapes[0].props.richText.content[0].content[0].text).toBe("Task Name\n\nDo the thing");
+    expect(shapes[0].props.text).toBe("Task Name\n\nDo the thing");
   });
 
   it("converts embeds to embed shapes", () => {
@@ -381,7 +381,7 @@ describe("generateTldraw", () => {
     });
     expect(shapes[0].props.geo).toBe("rectangle");
     expect(shapes[0].props.color).toBe("grey");
-    expect(shapes[0].props.richText.content[0].content[0].text).toContain("report.pdf");
+    expect(shapes[0].props.text).toContain("report.pdf");
   });
 
   it("converts previews to bookmark shapes", () => {
@@ -405,7 +405,7 @@ describe("generateTldraw", () => {
     expect(shapes[0].props.url).toBe("https://example.com/article");
   });
 
-  it("converts edges to arrows with bindings", () => {
+  it("converts edges to arrows with inline binding terminals", () => {
     const sticky1: IRStickyNote = {
       id: "1",
       type: "sticky_note",
@@ -439,57 +439,18 @@ describe("generateTldraw", () => {
 
     const result = parseTldraw(makeBoard([sticky1, sticky2], [edge]));
     const shapes = getShapes(result);
-    const bindings = getBindings(result);
 
     // 2 notes + 1 arrow = 3 shapes
     const arrows = shapes.filter((s: any) => s.type === "arrow");
     expect(arrows).toHaveLength(1);
     expect(arrows[0].props.arrowheadStart).toBe("none");
     expect(arrows[0].props.arrowheadEnd).toBe("arrow");
+    expect(arrows[0].props.text).toBe("leads to");
 
-    // 2 bindings (start + end)
-    expect(bindings).toHaveLength(2);
-    expect(bindings[0].props.terminal).toBe("start");
-    expect(bindings[1].props.terminal).toBe("end");
-
-    // Bindings reference the arrow
-    expect(bindings[0].fromId).toBe(arrows[0].id);
-    expect(bindings[1].fromId).toBe(arrows[0].id);
-  });
-
-  it("uses elbowed arrows for elbowed line style", () => {
-    const sticky1: IRStickyNote = {
-      id: "1",
-      type: "sticky_note",
-      x: 0,
-      y: 0,
-      width: 100,
-      height: 100,
-      rotation: 0,
-      content: "A",
-    };
-    const sticky2: IRStickyNote = {
-      id: "2",
-      type: "sticky_note",
-      x: 300,
-      y: 0,
-      width: 100,
-      height: 100,
-      rotation: 0,
-      content: "B",
-    };
-    const edge: IREdge = {
-      id: "e1",
-      fromNodeId: "1",
-      toNodeId: "2",
-      lineStyle: "elbowed",
-      startCap: "none",
-      endCap: "arrow",
-    };
-
-    const result = parseTldraw(makeBoard([sticky1, sticky2], [edge]));
-    const arrows = getShapes(result).filter((s: any) => s.type === "arrow");
-    expect(arrows[0].props.kind).toBe("elbow");
+    // Inline binding terminals (not separate binding records)
+    expect(arrows[0].props.start.type).toBe("binding");
+    expect(arrows[0].props.end.type).toBe("binding");
+    expect(getBindings(result)).toHaveLength(0);
   });
 
   it("skips edges with missing endpoints", () => {
@@ -515,7 +476,6 @@ describe("generateTldraw", () => {
     const result = parseTldraw(makeBoard([sticky], [edge]));
     const arrows = getShapes(result).filter((s: any) => s.type === "arrow");
     expect(arrows).toHaveLength(0);
-    expect(getBindings(result)).toHaveLength(0);
   });
 
   it("uses frame-relative coordinates for children", () => {
@@ -666,12 +626,11 @@ describe("generateTldraw", () => {
 
     const result = parseTldraw(board);
     const shapes = getShapes(result);
-    const bindings = getBindings(result);
 
     // 3 nodes + 1 arrow = 4 shapes
     expect(shapes).toHaveLength(4);
-    // 2 bindings (start + end)
-    expect(bindings).toHaveLength(2);
+    // No separate binding records (inline terminals)
+    expect(getBindings(result)).toHaveLength(0);
 
     // Verify all shape IDs are unique
     const ids = shapes.map((s: any) => s.id);
@@ -761,21 +720,22 @@ describe("wrapTldrawForObsidian", () => {
     expect(result).toContain("---\ntldraw-file: true\n---");
     expect(result).toContain("!!!_START_OF_TLDRAW_DATA__DO_NOT_CHANGE_THIS_PHRASE_!!!");
     expect(result).toContain("!!!_END_OF_TLDRAW_DATA__DO_NOT_CHANGE_THIS_PHRASE_!!!");
-    expect(result).toContain("```json");
+    // Start delimiter on same line as code fence
+    expect(result).toContain("```json !!!_START_OF_TLDRAW_DATA__DO_NOT_CHANGE_THIS_PHRASE_!!!");
   });
 
   it("includes meta block with plugin version and uuid", () => {
     const tldrJson = JSON.stringify({ tldrawFileFormatVersion: 1, schema: {}, records: [] });
     const result = wrapTldrawForObsidian(tldrJson);
 
-    // Extract the JSON from the wrapper
-    const jsonMatch = result.match(/```json\n([\s\S]*?)\n```/);
+    // Extract the JSON between delimiters
+    const jsonMatch = result.match(/START_OF_TLDRAW_DATA[^!]*!!!\n([\s\S]*?)\n!!!_END/);
     expect(jsonMatch).toBeTruthy();
 
     const wrapper = JSON.parse(jsonMatch![1]);
     expect(wrapper.meta).toBeDefined();
-    expect(wrapper.meta["plugin-version"]).toBe("3.0.0");
-    expect(wrapper.meta["tldraw-version"]).toBe("3.0.0");
+    expect(wrapper.meta["plugin-version"]).toBe("1.27.0");
+    expect(wrapper.meta["tldraw-version"]).toBe("3.15.3");
     expect(wrapper.meta.uuid).toBeDefined();
     expect(typeof wrapper.meta.uuid).toBe("string");
   });
@@ -785,8 +745,14 @@ describe("wrapTldrawForObsidian", () => {
     const tldrJson = JSON.stringify(data);
     const result = wrapTldrawForObsidian(tldrJson);
 
-    const jsonMatch = result.match(/```json\n([\s\S]*?)\n```/);
+    const jsonMatch = result.match(/START_OF_TLDRAW_DATA[^!]*!!!\n([\s\S]*?)\n!!!_END/);
     const wrapper = JSON.parse(jsonMatch![1]);
     expect(wrapper.raw).toEqual(data);
+  });
+
+  it("uses tab indentation for JSON", () => {
+    const tldrJson = JSON.stringify({ tldrawFileFormatVersion: 1, schema: {}, records: [] });
+    const result = wrapTldrawForObsidian(tldrJson);
+    expect(result).toContain("\t\"meta\"");
   });
 });

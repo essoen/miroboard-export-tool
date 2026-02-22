@@ -16,7 +16,6 @@ type TldrawRecord =
   | TldrawDocumentRecord
   | TldrawPageRecord
   | TldrawShapeRecord
-  | TldrawBindingRecord
   | TldrawAssetRecord;
 
 interface TldrawDocumentRecord {
@@ -46,21 +45,6 @@ interface TldrawShapeRecord {
   isLocked: boolean;
   opacity: number;
   props: Record<string, unknown>;
-  meta: Record<string, unknown>;
-}
-
-interface TldrawBindingRecord {
-  id: string;
-  typeName: "binding";
-  type: "arrow";
-  fromId: string;
-  toId: string;
-  props: {
-    terminal: "start" | "end";
-    normalizedAnchor: { x: number; y: number };
-    isExact: boolean;
-    isPrecise: boolean;
-  };
   meta: Record<string, unknown>;
 }
 
@@ -138,26 +122,10 @@ const MIRO_SHAPE_TO_GEO: Record<string, string> = {
   wedge_round_rectangle_callout: "rectangle",
 };
 
-// --- Rich text helper ---
-
-function toRichText(text: string): unknown {
-  // tldraw richText format: a simplified structure
-  // For plain text, we use a basic document structure
-  if (!text) {
-    return { type: "doc", content: [{ type: "paragraph" }] };
-  }
-  return {
-    type: "doc",
-    content: [
-      {
-        type: "paragraph",
-        content: [{ type: "text", text }],
-      },
-    ],
-  };
-}
-
-// --- Schema version (based on tldraw v3.x) ---
+// --- Schema version ---
+// Uses tldraw v2.1.4 baseline sequence numbers. The obsidian-plugin's
+// bundled tldraw (3.15.x) will auto-migrate these to the current version.
+// Using numbers higher than what the plugin supports causes parse failures.
 
 const TLDRAW_SCHEMA = {
   schemaVersion: 2 as const,
@@ -166,26 +134,27 @@ const TLDRAW_SCHEMA = {
     "com.tldraw.asset": 1,
     "com.tldraw.camera": 1,
     "com.tldraw.document": 2,
-    "com.tldraw.instance": 25,
+    "com.tldraw.instance": 24,
     "com.tldraw.instance_page_state": 5,
     "com.tldraw.page": 1,
-    "com.tldraw.shape": 6,
-    "com.tldraw.shape.arrow": 6,
-    "com.tldraw.shape.bookmark": 2,
-    "com.tldraw.shape.draw": 2,
-    "com.tldraw.shape.embed": 4,
-    "com.tldraw.shape.frame": 1,
-    "com.tldraw.shape.geo": 10,
+    "com.tldraw.shape": 4,
+    "com.tldraw.asset.bookmark": 1,
+    "com.tldraw.asset.image": 3,
+    "com.tldraw.asset.video": 3,
     "com.tldraw.shape.group": 0,
-    "com.tldraw.shape.highlight": 1,
-    "com.tldraw.shape.image": 5,
-    "com.tldraw.shape.line": 5,
-    "com.tldraw.shape.note": 9,
-    "com.tldraw.shape.text": 3,
+    "com.tldraw.shape.text": 1,
+    "com.tldraw.shape.bookmark": 2,
+    "com.tldraw.shape.draw": 1,
+    "com.tldraw.shape.geo": 8,
+    "com.tldraw.shape.note": 6,
+    "com.tldraw.shape.line": 4,
+    "com.tldraw.shape.frame": 0,
+    "com.tldraw.shape.arrow": 3,
+    "com.tldraw.shape.highlight": 0,
+    "com.tldraw.shape.embed": 4,
+    "com.tldraw.shape.image": 3,
     "com.tldraw.shape.video": 2,
-    "com.tldraw.binding": 0,
-    "com.tldraw.binding.arrow": 5,
-    "com.tldraw.instance_presence": 6,
+    "com.tldraw.instance_presence": 5,
     "com.tldraw.pointer": 1,
   },
 };
@@ -245,18 +214,12 @@ export function generateTldraw(board: IRBoard, options: TldrawOptions = {}): str
     }
   }
 
-  // Convert edges to arrows + bindings
+  // Convert edges to arrows (with inline binding terminals)
   const nodeIds = new Set(board.nodes.map((n) => n.id));
   for (const edge of board.edges) {
     if (nodeIds.has(edge.fromNodeId) && nodeIds.has(edge.toNodeId)) {
-      const { arrow, startBinding, endBinding } = convertEdge(
-        edge,
-        shapeIndex,
-        nodeById,
-      );
+      const arrow = convertEdge(edge, shapeIndex, nodeById);
       records.push(arrow);
-      records.push(startBinding);
-      records.push(endBinding);
       shapeIndex++;
     }
   }
@@ -322,7 +285,6 @@ function convertNode(
         type: "note",
         props: {
           color: irColorToTldrawNoteColor(node.color),
-          labelColor: "black",
           size: "m",
           font: "sans",
           fontSizeAdjustment: 0,
@@ -330,8 +292,7 @@ function convertNode(
           verticalAlign: "middle",
           growY: 0,
           url: "",
-          richText: toRichText(node.content || ""),
-          scale: 1,
+          text: node.content || "",
         },
       };
 
@@ -354,8 +315,7 @@ function convertNode(
           verticalAlign: "middle",
           growY: 0,
           url: "",
-          richText: toRichText(node.content || ""),
-          scale: 1,
+          text: node.content || "",
         },
       };
     }
@@ -368,10 +328,9 @@ function convertNode(
           color: irColorToTldrawColor(node.color),
           size: "m",
           font: "sans",
-          fontSizeAdjustment: 0,
           align: "start",
           w: Math.round(node.width),
-          richText: toRichText(node.content || ""),
+          text: node.content || "",
           scale: 1,
           autoSize: false,
         },
@@ -400,15 +359,13 @@ function convertNode(
           playing: true,
           url: "",
           crop: null,
-          flipX: false,
-          flipY: false,
         },
       };
     }
 
     case "card": {
       // Cards become notes with title + description
-      const text = node.description
+      const cardText = node.description
         ? `${node.title}\n\n${node.description}`
         : node.title;
       return {
@@ -416,7 +373,6 @@ function convertNode(
         type: "note",
         props: {
           color: irColorToTldrawNoteColor(node.color),
-          labelColor: "black",
           size: "m",
           font: "sans",
           fontSizeAdjustment: 0,
@@ -424,8 +380,7 @@ function convertNode(
           verticalAlign: "start",
           growY: 0,
           url: "",
-          richText: toRichText(text),
-          scale: 1,
+          text: cardText,
         },
       };
     }
@@ -460,8 +415,7 @@ function convertNode(
           verticalAlign: "middle",
           growY: 0,
           url: "",
-          richText: toRichText(`📄 ${node.title}`),
-          scale: 1,
+          text: `📄 ${node.title}`,
         },
       };
     }
@@ -489,11 +443,7 @@ function convertEdge(
   edge: IREdge,
   index: number,
   nodeById: Map<string, IRNode>,
-): {
-  arrow: TldrawShapeRecord;
-  startBinding: TldrawBindingRecord;
-  endBinding: TldrawBindingRecord;
-} {
+): TldrawShapeRecord {
   const arrowId = `shape:arrow_${nextId()}`;
 
   // Calculate arrow position as midpoint between connected nodes
@@ -505,8 +455,11 @@ function convertEdge(
   const toCenterX = toNode ? toNode.x + toNode.width / 2 : 0;
   const toCenterY = toNode ? toNode.y + toNode.height / 2 : 0;
 
-  // Arrow x,y is the start point; start/end are relative to x,y
-  const arrow: TldrawShapeRecord = {
+  const fromShapeId = getShapeId(edge.fromNodeId);
+  const toShapeId = getShapeId(edge.toNodeId);
+
+  // Arrow x,y is the start point; start/end use inline binding terminals (v2.1.4 format)
+  return {
     id: arrowId,
     typeName: "shape",
     type: "arrow",
@@ -518,7 +471,6 @@ function convertEdge(
     isLocked: false,
     opacity: 1,
     props: {
-      kind: edge.lineStyle === "elbowed" ? "elbow" : "arc",
       color: edge.color ? irColorToTldrawColor({ hex: edge.color }) : "black",
       labelColor: "black",
       fill: "none",
@@ -527,54 +479,26 @@ function convertEdge(
       font: "sans",
       arrowheadStart: edge.startCap === "none" ? "none" : "arrow",
       arrowheadEnd: edge.endCap === "none" ? "none" : "arrow",
-      start: { x: 0, y: 0 },
+      start: {
+        type: "binding",
+        boundShapeId: fromShapeId,
+        normalizedAnchor: { x: 0.5, y: 0.5 },
+        isExact: false,
+        isPrecise: false,
+      },
       end: {
-        x: Math.round(toCenterX - fromCenterX),
-        y: Math.round(toCenterY - fromCenterY),
+        type: "binding",
+        boundShapeId: toShapeId,
+        normalizedAnchor: { x: 0.5, y: 0.5 },
+        isExact: false,
+        isPrecise: false,
       },
       bend: 0,
-      richText: edge.label ? toRichText(edge.label) : toRichText(""),
+      text: edge.label || "",
       labelPosition: 0.5,
-      scale: 1,
-      elbowMidPoint: 0.5,
     },
     meta: {},
   };
-
-  const fromShapeId = getShapeId(edge.fromNodeId);
-  const toShapeId = getShapeId(edge.toNodeId);
-
-  const startBinding: TldrawBindingRecord = {
-    id: `binding:${nextId()}`,
-    typeName: "binding",
-    type: "arrow",
-    fromId: arrowId,
-    toId: fromShapeId,
-    props: {
-      terminal: "start",
-      normalizedAnchor: { x: 0.5, y: 0.5 },
-      isExact: false,
-      isPrecise: false,
-    },
-    meta: {},
-  };
-
-  const endBinding: TldrawBindingRecord = {
-    id: `binding:${nextId()}`,
-    typeName: "binding",
-    type: "arrow",
-    fromId: arrowId,
-    toId: toShapeId,
-    props: {
-      terminal: "end",
-      normalizedAnchor: { x: 0.5, y: 0.5 },
-      isExact: false,
-      isPrecise: false,
-    },
-    meta: {},
-  };
-
-  return { arrow, startBinding, endBinding };
 }
 
 // --- Asset conversion ---
