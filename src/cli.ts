@@ -1,7 +1,8 @@
 import { Command } from "commander";
 import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, basename, relative, resolve } from "node:path";
+import { join, basename, relative, resolve, dirname, parse } from "node:path";
+import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
 import { extractBoard } from "./extract/miro-extractor.js";
 import { generateCanvas } from "./generate/canvas/canvas-generator.js";
@@ -9,6 +10,10 @@ import { generateMarkdown } from "./generate/markdown/markdown-generator.js";
 import { generateTldraw } from "./generate/tldraw/tldraw-generator.js";
 import { wrapTldrawForObsidian } from "./generate/tldraw/tldraw-obsidian-wrapper.js";
 import { createProgressHandler, finishProgress } from "./utils/progress.js";
+
+function expandHome(p: string): string {
+  return p.startsWith("~/") || p === "~" ? homedir() + p.slice(1) : p;
+}
 
 /**
  * Read Miro token from a `token` file in cwd, if it exists.
@@ -33,6 +38,20 @@ function parseBoardId(input: string): string {
   );
   if (urlMatch) return urlMatch[1];
   return input;
+}
+
+/**
+ * Walk up from a directory looking for an `.obsidian/` folder.
+ * Returns the vault root path if found, or undefined.
+ */
+function detectVaultRoot(fromDir: string): string | undefined {
+  let dir = resolve(fromDir);
+  const root = parse(dir).root;
+  while (dir !== root) {
+    if (existsSync(join(dir, ".obsidian"))) return dir;
+    dir = dirname(dir);
+  }
+  return undefined;
 }
 
 /**
@@ -62,6 +81,7 @@ interface InteractiveOptions {
   dryRun: boolean;
   verbose: boolean;
   tldrawFormat: "tldr" | "obsidian" | "both";
+  vaultRoot?: string;
 }
 
 /**
@@ -89,10 +109,6 @@ async function promptOptions(boardId: string): Promise<InteractiveOptions> {
       console.log("  Token: using MIRO_ACCESS_TOKEN from env");
     }
 
-    // Output directory
-    const outputAnswer = await rl.question("  Output directory [./miro-export]: ");
-    const outputDir = outputAnswer.trim() || "./miro-export";
-
     // Formats
     const formatAnswer = await rl.question("  Formats — canvas, markdown, tldraw, or all [canvas,markdown]: ");
     let formats: string[];
@@ -117,6 +133,37 @@ async function promptOptions(boardId: string): Promise<InteractiveOptions> {
       tldrawFormat = tldrawFmt === "tldr" ? "tldr" : tldrawFmt === "obsidian" ? "obsidian" : "both";
     }
 
+    // Vault path (for canvas — files must be inside vault for Obsidian to resolve them)
+    let vaultRoot: string | undefined;
+    if (formats.includes("canvas")) {
+      const detected = detectVaultRoot(resolve("."));
+      const defaultHint = detected ? ` [${detected}]` : "";
+      const vaultAnswer = await rl.question(`  Obsidian vault path${defaultHint}: `);
+      const trimmed = vaultAnswer.trim();
+      if (trimmed) {
+        vaultRoot = expandHome(trimmed);
+      } else if (detected) {
+        vaultRoot = detected;
+      }
+    }
+
+    // Output directory — default inside vault when vault is specified
+    const defaultOutput = vaultRoot ? join(vaultRoot, "miro-export") : "./miro-export";
+    const outputAnswer = await rl.question(`  Output directory [${defaultOutput}]: `);
+    const outputDir = expandHome(outputAnswer.trim() || defaultOutput);
+
+    // Validate output is inside vault when vault is specified
+    if (vaultRoot) {
+      const absOutput = resolve(outputDir);
+      const absVault = resolve(vaultRoot);
+      if (!absOutput.startsWith(absVault)) {
+        console.warn(`\n  ⚠ Warning: Output directory is outside the vault.`);
+        console.warn(`    Obsidian Canvas can only reference files inside the vault.`);
+        console.warn(`    Vault:  ${absVault}`);
+        console.warn(`    Output: ${absOutput}\n`);
+      }
+    }
+
     // Download images
     const imgAnswer = await rl.question("  Download images? [Y/n]: ");
     const downloadImages = imgAnswer.trim().toLowerCase() !== "n";
@@ -130,7 +177,7 @@ async function promptOptions(boardId: string): Promise<InteractiveOptions> {
     const verbose = verboseAnswer.trim().toLowerCase() === "y";
 
     console.log("");
-    return { token: token.trim(), outputDir, formats, downloadImages, dryRun, verbose, tldrawFormat };
+    return { token: token.trim(), outputDir, formats, downloadImages, dryRun, verbose, tldrawFormat, vaultRoot };
   } finally {
     rl.close();
   }
@@ -166,8 +213,7 @@ export function createCli(): Command {
     )
     .action(async (boardInput: string, options) => {
       const boardId = parseBoardId(boardInput);
-      const fileToken = !process.env.MIRO_ACCESS_TOKEN ? await readTokenFile() : undefined;
-      const interactive = !hasExplicitOptions(options) && !process.env.MIRO_ACCESS_TOKEN && !fileToken;
+      const interactive = !hasExplicitOptions(options) && !process.env.MIRO_ACCESS_TOKEN;
 
       let token: string;
       let formats: string[];
@@ -176,6 +222,7 @@ export function createCli(): Command {
       let dryRun: boolean;
       let downloadImages: boolean;
       let tldrawFormat: "tldr" | "obsidian" | "both" = "both";
+      let vaultRoot: string | undefined;
 
       if (interactive) {
         // No options provided — ask the user interactively
@@ -187,8 +234,10 @@ export function createCli(): Command {
         dryRun = prompted.dryRun;
         downloadImages = prompted.downloadImages;
         tldrawFormat = prompted.tldrawFormat;
+        vaultRoot = prompted.vaultRoot;
       } else {
         // Options provided via flags / env / token file — use them directly
+        const fileToken = await readTokenFile();
         token = options.token || process.env.MIRO_ACCESS_TOKEN || fileToken;
         if (!token) {
           console.error(
@@ -197,7 +246,13 @@ export function createCli(): Command {
           process.exit(1);
         }
         formats = (options.format as string).split(",").map((f: string) => f.trim());
-        outputDir = options.vault || options.output;
+        vaultRoot = options.vault ? expandHome(options.vault) : undefined;
+        // When --vault is set: use --output if explicitly changed, otherwise default to {vault}/miro-export
+        if (vaultRoot && options.output === "./miro-export") {
+          outputDir = join(vaultRoot, "miro-export");
+        } else {
+          outputDir = expandHome(options.output);
+        }
         verbose = options.verbose || false;
         dryRun = options.dryRun || false;
         downloadImages = options.images !== false;
@@ -210,19 +265,23 @@ export function createCli(): Command {
       console.log(`Formats: ${formats.join(", ")}`);
       console.log("");
 
-      // Compute vault-relative asset path prefix when --vault is used.
+      // Compute vault-relative asset path prefix.
       // Obsidian Canvas "file" paths are resolved from the vault root.
-      // If output is ~/vault/miro-import/ and vault is ~/vault/,
-      // then prefix is "miro-import/" so file paths become "miro-import/assets/img.png".
+      // If output is ~/vault/miro-export/ and vault is ~/vault/,
+      // then prefix is "miro-export/" so file paths become "miro-export/assets/img.png".
+      // If output == vault root, no prefix needed — "assets/img.png" resolves directly.
       let assetPathPrefix: string | undefined;
-      const vaultRoot = options.vault;
       if (vaultRoot && !dryRun) {
         const absOutput = resolve(outputDir);
         const absVault = resolve(vaultRoot);
         const rel = relative(absVault, absOutput);
-        if (rel && !rel.startsWith("..")) {
+        if (rel.startsWith("..")) {
+          console.warn(`⚠ Output is outside vault — canvas image paths may not resolve in Obsidian.`);
+        } else if (rel) {
+          // Output is a subdirectory of vault — prefix with the relative path
           assetPathPrefix = rel + "/";
         }
+        // If rel is empty (vault == output), no prefix needed
       }
 
       // Extract board data from Miro (with progress bar)
