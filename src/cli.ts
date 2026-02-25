@@ -9,6 +9,7 @@ import { generateCanvas } from "./generate/canvas/canvas-generator.js";
 import { generateMarkdown } from "./generate/markdown/markdown-generator.js";
 import { generateTldraw } from "./generate/tldraw/tldraw-generator.js";
 import { wrapTldrawForObsidian } from "./generate/tldraw/tldraw-obsidian-wrapper.js";
+import { generateDrawio } from "./generate/drawio/drawio-generator.js";
 import { createProgressHandler, finishProgress } from "./utils/progress.js";
 
 function expandHome(p: string): string {
@@ -110,7 +111,7 @@ async function promptOptions(boardId: string): Promise<InteractiveOptions> {
     }
 
     // Formats
-    const formatAnswer = await rl.question("  Formats — canvas, markdown, tldraw, or all [canvas,markdown]: ");
+    const formatAnswer = await rl.question("  Formats — canvas, markdown, tldraw, drawio, or all [canvas,markdown]: ");
     let formats: string[];
     const fmt = formatAnswer.trim().toLowerCase();
     if (fmt === "canvas") {
@@ -119,8 +120,10 @@ async function promptOptions(boardId: string): Promise<InteractiveOptions> {
       formats = ["markdown"];
     } else if (fmt === "tldraw") {
       formats = ["tldraw"];
+    } else if (fmt === "drawio") {
+      formats = ["drawio"];
     } else if (fmt === "all") {
-      formats = ["canvas", "markdown", "tldraw"];
+      formats = ["canvas", "markdown", "tldraw", "drawio"];
     } else {
       formats = ["canvas", "markdown"];
     }
@@ -198,7 +201,7 @@ export function createCli(): Command {
     .option("-o, --output <dir>", "Output directory", "./miro-export")
     .option(
       "-f, --format <formats>",
-      "Output formats (comma-separated: canvas,markdown,tldraw)",
+      "Output formats (comma-separated: canvas,markdown,tldraw,drawio)",
       "canvas,markdown",
     )
     .option("--vault <path>", "Write directly into Obsidian vault")
@@ -361,6 +364,14 @@ export function createCli(): Command {
           await writeFile(tldrawMdPath, obsidianMd, "utf-8");
           console.log(`Written: ${tldrawMdPath}`);
         }
+      }
+
+      // Generate draw.io
+      if (formats.includes("drawio")) {
+        const drawioXml = generateDrawio(board);
+        const drawioPath = join(outputDir, `${boardBasename}.drawio`);
+        await writeFile(drawioPath, drawioXml, "utf-8");
+        console.log(`Written: ${drawioPath}`);
       }
 
       console.log("\nDone!");

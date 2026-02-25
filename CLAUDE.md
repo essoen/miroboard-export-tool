@@ -1,11 +1,11 @@
 # miro-migrator
 
-CLI tool to migrate Miro boards into Obsidian Canvas (`.canvas`), Markdown notes, and tldraw (`.tldraw.md`).
+CLI tool to migrate Miro boards into Obsidian Canvas (`.canvas`), Markdown notes, tldraw (`.tldraw.md`), and draw.io (`.drawio`).
 
 ## Quick Start
 
 ```bash
-npx vitest run                                   # run tests (74 tests)
+npx vitest run                                   # run tests (98 tests)
 npx tsup                                         # build
 MIRO_ACCESS_TOKEN=xxx npx tsx src/index.ts <url>  # run (dev mode)
 MIRO_ACCESS_TOKEN=xxx npx tsx src/index.ts <url> --dry-run  # preview only
@@ -43,11 +43,11 @@ The `--vault` flag (or vault prompt in interactive mode) ensures:
 ```
 Miro REST API v2 + v1 ──> [Extractor] ──> Intermediate Representation (IR)
                                                   │
-                                      ┌───────────┼───────────┐
-                                      │           │           │
-                              [CanvasGen]   [MarkdownGen]  [TldrawGen]
-                                      │           │           │
-                                .canvas file  .md notes   .tldraw.md
+                                  ┌───────────────┼───────────┬──────────────┐
+                                  │               │           │              │
+                          [CanvasGen]   [MarkdownGen]  [TldrawGen]   [DrawioGen]
+                                  │               │           │              │
+                            .canvas file  .md notes   .tldraw.md        .drawio
 ```
 
 The IR layer decouples extraction from generation. Adding new output formats (Excalidraw) requires only a new generator.
@@ -67,6 +67,8 @@ The IR layer decouples extraction from generation. Adding new output formats (Ex
 | `src/generate/tldraw/tldraw-generator.ts` | IR → tldraw v2.1.4 store snapshot JSON |
 | `src/generate/tldraw/tldraw-color-map.ts` | IRColor → tldraw color names |
 | `src/generate/tldraw/tldraw-obsidian-wrapper.ts` | Wrap tldraw JSON in `.tldraw.md` for obsidian-tldraw plugin (v1.27.0) |
+| `src/generate/drawio/drawio-generator.ts` | IR → draw.io mxGraph XML (.drawio) |
+| `src/generate/drawio/drawio-color-map.ts` | IRColor → draw.io fill/stroke hex pairs |
 | `src/utils/progress.ts` | Progress bar (spinner for streaming, bar for determinate phases) |
 | `src/utils/rate-limiter.ts` | Token bucket rate limiter (800 req/min) |
 | `src/utils/html-to-markdown.ts` | Convert Miro HTML content to Markdown |
@@ -131,7 +133,7 @@ Key design decisions:
 When run without flags or env token, the CLI enters interactive mode with this prompt order:
 
 1. **Token** — from env / token file / prompt
-2. **Formats** — canvas, markdown, tldraw, or all
+2. **Formats** — canvas, markdown, tldraw, drawio, or all
 3. **tldraw sub-format** — if tldraw selected: tldr, obsidian, or both
 4. **Vault path** — if canvas selected: auto-detects `.obsidian/` from CWD as default
 5. **Output directory** — defaults to `{vault}/miro-export` when vault is set, otherwise `./miro-export`
@@ -143,6 +145,7 @@ When run without flags or env token, the CLI enters interactive mode with this p
 
 ### Output Formats
 - **Excalidraw generator**: IR → `.excalidraw.md` with LZ-string compressed JSON for Excalidraw Obsidian plugin.
+- **draw.io rotation**: Node `rotation` field is not applied to mxCell (draw.io supports it via `style="rotation=N"` but not currently wired up).
 
 ### Extraction Improvements
 - **app_card type**: Not implemented (0 on current test board, but may exist on other boards)
