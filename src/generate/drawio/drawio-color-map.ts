@@ -7,7 +7,7 @@ const MIRO_TO_DRAWIO: Record<string, { fill: string; stroke: string }> = {
   orange:       { fill: "#f0a30a", stroke: "#bd7000" },
   light_green:  { fill: "#d5e8d4", stroke: "#82b366" },
   green:        { fill: "#67ab9f", stroke: "#23877b" },
-  dark_green:   { fill: "#006eaf", stroke: "#005885" },
+  dark_green:   { fill: "#1a6b3c", stroke: "#0d4526" },
   light_pink:   { fill: "#ffe6cc", stroke: "#d79b00" },
   pink:         { fill: "#f8cecc", stroke: "#b85450" },
   red:          { fill: "#f8cecc", stroke: "#b85450" },

@@ -50,7 +50,7 @@ function arrowMarker(cap: IREdge["startCap"]): string {
     case "diamond":        return "diamond";
     case "circle":
     case "oval":           return "oval";
-    default:               return "open";
+    default:               return "none";
   }
 }
 
@@ -120,6 +120,7 @@ function renderNodeCell(
     case "image": {
       const asset = assetMap.get(node.assetId);
       if (asset?.localPath) {
+        // file:// URLs work in draw.io Desktop but not in draw.io Web (browser security)
         const url = xmlEscape(`file://${asset.localPath}`);
         const style = `shape=image;image=${url};strokeColor=none;`;
         const value = xmlEscape(node.title || "");

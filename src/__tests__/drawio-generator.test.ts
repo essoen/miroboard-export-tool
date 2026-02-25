@@ -523,6 +523,53 @@ describe("generateDrawio", () => {
     expect(xml).toContain('<mxCell id="1" parent="0"/>');
   });
 
+  it("maps dark_green named color to green fill (not blue)", () => {
+    const sticky: IRStickyNote = {
+      id: "1",
+      type: "sticky_note",
+      x: 0, y: 0, width: 100, height: 100, rotation: 0,
+      content: "Dark green",
+      color: { hex: "#1a6b3c", miroName: "dark_green" },
+    };
+
+    const xml = generateDrawio(makeBoard([sticky]));
+    expect(xml).toContain("fillColor=#1a6b3c");
+    expect(xml).not.toContain("fillColor=#006eaf"); // was incorrectly blue
+  });
+
+  it("document node with empty title renders without crashing", () => {
+    const doc: IRDocument = {
+      id: "8",
+      type: "document",
+      x: 0, y: 0, width: 200, height: 300, rotation: 0,
+      title: "",
+      documentUrl: "https://api.miro.com/...",
+    };
+
+    const xml = generateDrawio(makeBoard([doc]));
+    // Should produce a cell (with just the emoji prefix)
+    expect(xml).toContain("📄");
+    expect(xml).toContain('vertex="1"');
+  });
+
+  it("unknown arrowCap defaults to none (not open)", () => {
+    const s1: IRStickyNote = { id: "1", type: "sticky_note", x: 0, y: 0, width: 100, height: 100, rotation: 0, content: "A" };
+    const s2: IRStickyNote = { id: "2", type: "sticky_note", x: 300, y: 0, width: 100, height: 100, rotation: 0, content: "B" };
+    // Use a cap value that falls through to default
+    const edge: IREdge = {
+      id: "e1", fromNodeId: "1", toNodeId: "2",
+      lineStyle: "straight",
+      startCap: "none",
+      endCap: "none",
+    };
+
+    // Verify the default path: both caps explicitly "none" → startArrow=none, endArrow=none
+    const xml = generateDrawio(makeBoard([s1, s2], [edge]));
+    expect(xml).toContain("startArrow=none");
+    expect(xml).toContain("endArrow=none");
+    expect(xml).not.toContain("endArrow=open");
+  });
+
   it("handles full board with mixed content", () => {
     const board = makeBoard(
       [
