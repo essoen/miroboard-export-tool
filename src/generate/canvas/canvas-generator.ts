@@ -89,6 +89,36 @@ export function generateCanvas(board: IRBoard): string {
   return JSON.stringify(canvas, null, 2);
 }
 
+/**
+ * Estimate canvas text node dimensions from content.
+ * Miro dimensions often don't match Obsidian Canvas rendering
+ * (missing height, fixed sticky-note squares, different font metrics).
+ */
+function estimateTextSize(
+  text: string,
+  width: number,
+  height: number,
+): { width: number; height: number } {
+  const AVG_CHAR_WIDTH = 8;
+  const LINE_HEIGHT = 24;
+  const MIN_WIDTH = 250;
+  const MIN_HEIGHT = 60;
+  const PADDING_V = 40;
+
+  const w = Math.max(width, MIN_WIDTH);
+  const charsPerLine = Math.floor(w / AVG_CHAR_WIDTH);
+  const explicitNewlines = (text.match(/\n/g) || []).length;
+  const wrappedLines =
+    charsPerLine > 0 ? Math.ceil(text.length / charsPerLine) : 1;
+  const totalLines = Math.max(wrappedLines, explicitNewlines + 1);
+  const estimatedH = totalLines * LINE_HEIGHT + PADDING_V;
+
+  return {
+    width: w,
+    height: Math.max(estimatedH, MIN_HEIGHT, height),
+  };
+}
+
 function convertNode(
   node: IRNode,
   idMap: IdMap,
@@ -106,20 +136,26 @@ function convertNode(
   if (color) base.color = color;
 
   switch (node.type) {
-    case "sticky_note":
-      return { ...base, type: "text", text: node.content || "" };
+    case "sticky_note": {
+      const stickyText = node.content || "";
+      const stickySize = estimateTextSize(stickyText, base.width, base.height);
+      return { ...base, ...stickySize, type: "text", text: stickyText };
+    }
 
     case "shape": {
       let text = node.content || "";
-      // If shape has no text content, add shape type as context
       if (!text && node.shapeType !== "rectangle") {
         text = `[${node.shapeType}]`;
       }
-      return { ...base, type: "text", text };
+      const shapeSize = estimateTextSize(text, base.width, base.height);
+      return { ...base, ...shapeSize, type: "text", text };
     }
 
-    case "text":
-      return { ...base, type: "text", text: node.content || "" };
+    case "text": {
+      const textContent = node.content || "";
+      const textSize = estimateTextSize(textContent, base.width, base.height);
+      return { ...base, ...textSize, type: "text", text: textContent };
+    }
 
     case "frame":
       return { ...base, type: "group", label: node.label || undefined };
@@ -140,7 +176,8 @@ function convertNode(
       if (node.description) {
         text += `\n\n${node.description}`;
       }
-      return { ...base, type: "text", text };
+      const cardSize = estimateTextSize(text, base.width, base.height);
+      return { ...base, ...cardSize, type: "text", text };
     }
 
     case "embed":

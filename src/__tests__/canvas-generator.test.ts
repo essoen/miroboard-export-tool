@@ -47,7 +47,7 @@ describe("generateCanvas", () => {
       text: "Hello world",
       x: 100,
       y: 200,
-      width: 199,
+      width: 250,
       height: 228,
       color: "3", // yellow preset
     });
@@ -306,7 +306,7 @@ describe("generateCanvas", () => {
     const result = JSON.parse(generateCanvas(makeBoard([sticky])));
     expect(result.nodes[0].x).toBe(101);
     expect(result.nodes[0].y).toBe(200);
-    expect(result.nodes[0].width).toBe(200);
+    expect(result.nodes[0].width).toBe(250);
     expect(result.nodes[0].height).toBe(229);
   });
 
