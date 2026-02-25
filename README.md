@@ -1,12 +1,13 @@
 # miro-migrator
 
-Migrate Miro boards to Obsidian Canvas, tldraw, and Markdown via the Miro REST API.
+Migrate Miro boards to Obsidian Canvas, tldraw, draw.io, and Markdown via the Miro REST API.
 
 ## Output Formats
 
 - **Canvas** (`.canvas`) — Obsidian Canvas JSON spec
 - **tldraw** (`.tldr`) — for [tldraw.com](https://tldraw.com) or any tldraw-compatible tool
 - **tldraw for Obsidian** (`.tldraw.md`) — for the [tldraw-in-obsidian](https://github.com/holxsam/tldraw-in-obsidian) plugin
+- **draw.io** (`.drawio`) — mxGraph XML for [draw.io / diagrams.net](https://www.diagrams.net)
 - **Markdown** (`.md`) — individual notes per item + board index
 
 ## Usage
@@ -18,7 +19,10 @@ npx tsx src/index.ts https://miro.com/app/board/BOARD_ID/
 # Export all formats to an Obsidian vault (outputs to ~/vault/miro-export/)
 MIRO_ACCESS_TOKEN=xxx npx tsx src/index.ts BOARD_ID \
   --vault ~/path/to/vault \
-  --format canvas,markdown,tldraw
+  --format canvas,markdown,tldraw,drawio
+
+# Export draw.io only
+MIRO_ACCESS_TOKEN=xxx npx tsx src/index.ts BOARD_ID --format drawio
 
 # Export tldraw only (.tldr for tldraw.com)
 MIRO_ACCESS_TOKEN=xxx npx tsx src/index.ts BOARD_ID \
@@ -34,7 +38,7 @@ MIRO_ACCESS_TOKEN=xxx npx tsx src/index.ts BOARD_ID --dry-run
 |------|-------------|---------|
 | `-t, --token <token>` | Miro access token (or `MIRO_ACCESS_TOKEN` env, or `token` file in cwd) | — |
 | `-o, --output <dir>` | Output directory | `./miro-export` |
-| `-f, --format <fmts>` | Comma-separated: `canvas`, `markdown`, `tldraw` | `canvas,markdown` |
+| `-f, --format <fmts>` | Comma-separated: `canvas`, `markdown`, `tldraw`, `drawio` | `canvas,markdown` |
 | `--tldraw-format <fmt>` | tldraw output: `tldr`, `obsidian`, or `both` | `both` |
 | `--vault <path>` | Obsidian vault root — defaults output to `{vault}/miro-export` and computes vault-relative image paths | — |
 | `--no-images` | Skip image/document download | — |
@@ -51,7 +55,7 @@ Requires a Miro OAuth token with `boards:read` scope. Token is resolved in order
 ```bash
 git clone <repo> && cd miro-migrator
 npm install
-npm test          # 74 tests via vitest
+npm test          # 98 tests via vitest
 npm run build     # build with tsup
 ```
 
@@ -78,6 +82,9 @@ src/
       tldraw-generator.ts           # IR → .tldr (tldraw JSON)
       tldraw-color-map.ts           # Miro colors → tldraw named colors
       tldraw-obsidian-wrapper.ts    # .tldr → .tldraw.md for Obsidian plugin
+    drawio/
+      drawio-generator.ts           # IR → .drawio (mxGraph XML)
+      drawio-color-map.ts           # Miro colors → draw.io fill/stroke hex pairs
     markdown/
       markdown-generator.ts         # IR → .md notes + board index
   utils/
@@ -93,11 +100,11 @@ src/
 ```
 Miro REST API (v2 + v1) ──> [Extractor] ──> Intermediate Representation (IR)
                                                     │
-                                      ┌─────────────┼─────────────┐
-                                      │             │             │
-                              [CanvasGenerator] [TldrawGenerator] [MarkdownGenerator]
-                                      │             │             │
-                                .canvas file   .tldr / .tldraw.md   .md notes
+                                  ┌─────────────────┼──────────────┬──────────────┐
+                                  │                 │              │              │
+                          [CanvasGenerator] [TldrawGenerator] [DrawioGenerator] [MarkdownGenerator]
+                                  │                 │              │              │
+                            .canvas file   .tldr/.tldraw.md    .drawio        .md notes
 ```
 
 The IR layer decouples extraction from generation. Each output format has its own generator module.
