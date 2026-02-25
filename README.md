@@ -15,10 +15,9 @@ Migrate Miro boards to Obsidian Canvas, tldraw, and Markdown via the Miro REST A
 # Interactive mode — prompts for token and options
 npx tsx src/index.ts https://miro.com/app/board/BOARD_ID/
 
-# Export all formats to an Obsidian vault
+# Export all formats to an Obsidian vault (outputs to ~/vault/miro-export/)
 MIRO_ACCESS_TOKEN=xxx npx tsx src/index.ts BOARD_ID \
   --vault ~/path/to/vault \
-  --output ~/path/to/vault \
   --format canvas,markdown,tldraw
 
 # Export tldraw only (.tldr for tldraw.com)
@@ -33,17 +32,17 @@ MIRO_ACCESS_TOKEN=xxx npx tsx src/index.ts BOARD_ID --dry-run
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-t, --token <token>` | Miro access token (or `MIRO_ACCESS_TOKEN` env) | — |
+| `-t, --token <token>` | Miro access token (or `MIRO_ACCESS_TOKEN` env, or `token` file in cwd) | — |
 | `-o, --output <dir>` | Output directory | `./miro-export` |
 | `-f, --format <fmts>` | Comma-separated: `canvas`, `markdown`, `tldraw` | `canvas,markdown` |
 | `--tldraw-format <fmt>` | tldraw output: `tldr`, `obsidian`, or `both` | `both` |
-| `--vault <path>` | Obsidian vault root (for correct file paths) | — |
+| `--vault <path>` | Obsidian vault root — defaults output to `{vault}/miro-export` and computes vault-relative image paths | — |
 | `--no-images` | Skip image/document download | — |
 | `--scale <number>` | Coordinate scale factor | `1.0` |
 | `--dry-run` | Preview extraction without writing files | — |
 | `--verbose` | Detailed logging | — |
 
-Requires a Miro OAuth token with `boards:read` scope.
+Requires a Miro OAuth token with `boards:read` scope. Token is resolved in order: `--token` flag → `MIRO_ACCESS_TOKEN` env → `token` file in cwd → interactive prompt.
 
 ## Development
 
@@ -52,7 +51,7 @@ Requires a Miro OAuth token with `boards:read` scope.
 ```bash
 git clone <repo> && cd miro-migrator
 npm install
-npm test          # 72 tests via vitest
+npm test          # 74 tests via vitest
 npm run build     # build with tsup
 ```
 
@@ -69,7 +68,7 @@ src/
     color.ts                        # Miro named colors → hex parsing
     coordinate-transform.ts         # Miro center-origin → top-left
   extract/
-    miro-extractor.ts               # Bulk fetch + detail-fetch → IR
+    miro-extractor.ts               # Bulk fetch + concurrent detail-fetch → IR
     image-downloader.ts             # Two-step image download (API → CDN)
   generate/
     canvas/

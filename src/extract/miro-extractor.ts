@@ -51,6 +51,21 @@ export interface ExtractionResult {
 }
 
 /**
+ * Process items in concurrent batches.
+ * Each batch runs up to `concurrency` items in parallel via Promise.allSettled.
+ */
+async function batchProcess<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    await Promise.allSettled(batch.map(fn));
+  }
+}
+
+/**
  * Extract a Miro board into our intermediate representation.
  */
 export async function extractBoard(
@@ -150,8 +165,8 @@ export async function extractBoard(
     log(`Fetching details for ${totalDetails} items (${needsStyleDetail.length} styled, ${needsPreviewDetail.length} previews)...`);
     let detailCount = 0;
 
-    // Pass 1: Style details via v2 typed endpoints
-    for (const { node } of needsStyleDetail) {
+    // Pass 1: Style details via v2 typed endpoints (concurrent)
+    await batchProcess(needsStyleDetail, 10, async ({ node }) => {
       detailCount++;
       progress({ phase: "details", current: detailCount, total: totalDetails });
       try {
@@ -194,11 +209,11 @@ export async function extractBoard(
         stats.failedDetailFetches.push({ type: node.type, id: node.id, error: msg });
         log(`  Warning: Failed to fetch detail for ${node.type} ${node.id}: ${err}`);
       }
-    }
+    });
 
-    // Pass 2: Preview URLs via Miro v1 REST API
+    // Pass 2: Preview URLs via Miro v1 REST API (concurrent)
     // v2 API returns isSupported:false for previews; v1 /widgets/{id} returns url+title.
-    for (const { node } of needsPreviewDetail) {
+    await batchProcess(needsPreviewDetail, 10, async ({ node }) => {
       detailCount++;
       progress({ phase: "details", current: detailCount, total: totalDetails });
       try {
@@ -218,7 +233,7 @@ export async function extractBoard(
         stats.failedDetailFetches.push({ type: "preview", id: node.id, error: msg });
         log(`  Warning: Failed to fetch preview detail for ${node.id}: ${err}`);
       }
-    }
+    });
 
     log(`Detail-fetch complete`);
   }
@@ -287,30 +302,28 @@ export async function extractBoard(
   if (downloadImages && outputDir && assets.length > 0) {
     log(`Downloading ${assets.length} assets...`);
     let downloadCount = 0;
-    const downloadTotal = assets.filter((a) => a.miroUrl).length;
-
-    for (const asset of assets) {
-      if (asset.miroUrl) {
-        downloadCount++;
-        progress({ phase: "assets", current: downloadCount, total: downloadTotal, message: asset.id });
-        try {
-          await rateLimiter.acquire();
-          const localPath = await downloadImage(
-            asset.miroUrl,
-            outputDir,
-            asset.id,
-            token,
-            assetPathPrefix,
-          );
-          asset.localPath = localPath;
-          log(`  Downloaded: ${localPath}`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          stats.failedAssetDownloads.push({ id: asset.id, error: msg });
-          log(`  Warning: Failed to download asset ${asset.id}: ${err}`);
-        }
+    const downloadableAssets = assets.filter((a) => a.miroUrl);
+    const downloadTotal = downloadableAssets.length;
+    await batchProcess(downloadableAssets, 5, async (asset) => {
+      downloadCount++;
+      progress({ phase: "assets", current: downloadCount, total: downloadTotal, message: asset.id });
+      try {
+        await rateLimiter.acquire();
+        const localPath = await downloadImage(
+          asset.miroUrl,
+          outputDir,
+          asset.id,
+          token,
+          assetPathPrefix,
+        );
+        asset.localPath = localPath;
+        log(`  Downloaded: ${localPath}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        stats.failedAssetDownloads.push({ id: asset.id, error: msg });
+        log(`  Warning: Failed to download asset ${asset.id}: ${err}`);
       }
-    }
+    });
   }
 
   // Normalize coordinates to positive space
