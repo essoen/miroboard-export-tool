@@ -1,4 +1,4 @@
-import type { IRBoard, IRNode } from "../../model/types.js";
+import type { IRBoard, IRNode, IRAsset } from "../../model/types.js";
 
 interface MarkdownFile {
   filename: string;
@@ -15,13 +15,14 @@ export function generateMarkdown(
 ): MarkdownFile[] {
   const files: MarkdownFile[] = [];
   const usedFilenames = new Set<string>();
+  const assetMap = new Map(board.assets.map((a) => [a.id, a]));
 
-  // Filter to content-bearing nodes (sticky notes, cards, text with substantial content, documents, previews with URLs)
+  // Filter to content-bearing nodes (sticky notes, cards, text with substantial content, documents with downloaded assets, previews with URLs)
   const contentNodes = board.nodes.filter(
     (n) =>
       n.type === "sticky_note" ||
       n.type === "card" ||
-      n.type === "document" ||
+      (n.type === "document" && assetMap.get(`doc_${n.id}`)?.localPath) ||
       (n.type === "preview" && (n.url || n.title)) ||
       (n.type === "text" && getNodeContent(n).length > 20),
   );
@@ -35,7 +36,7 @@ export function generateMarkdown(
     usedFilenames.add(filename);
 
     const frontmatter = buildFrontmatter(node, board);
-    const body = buildBody(node);
+    const body = buildBody(node, assetMap);
 
     files.push({
       filename: `${filename}.md`,
@@ -95,7 +96,7 @@ function buildFrontmatter(node: IRNode, board: IRBoard): string {
   return lines.join("\n");
 }
 
-function buildBody(node: IRNode): string {
+function buildBody(node: IRNode, assetMap: Map<string, IRAsset>): string {
   switch (node.type) {
     case "sticky_note":
       return node.content;
@@ -108,8 +109,11 @@ function buildBody(node: IRNode): string {
     }
     case "text":
       return node.content;
-    case "document":
-      return `# 📄 ${node.title}\n\nEmbedded document from Miro board.`;
+    case "document": {
+      const asset = assetMap.get(`doc_${node.id}`);
+      // Asset with localPath guaranteed to exist due to filtering in generateMarkdown
+      return `# 📄 ${node.title}\n\n![[${asset!.localPath}]]`;
+    }
     case "preview": {
       let body = `# 🔗 ${node.title || "Link Preview"}`;
       if (node.url) {

@@ -153,7 +153,6 @@ When run without flags or env token, the CLI enters interactive mode with this p
 - **Caching**: No local cache of API responses. Re-running always re-fetches everything.
 
 ### Canvas Rendering
-- **PDF inline preview**: PDFs are downloaded correctly but Obsidian Canvas may not render them inline (Obsidian limitation). The files are in the vault and accessible.
 - **Shape borders**: IR stores borderColor/borderWidth/borderStyle but Canvas spec doesn't support borders on text nodes. Only color is preserved.
 - **Text node sizing**: Some text nodes may have auto-calculated height from Miro that differs from Canvas rendering.
 
