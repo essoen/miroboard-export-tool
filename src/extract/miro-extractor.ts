@@ -54,7 +54,7 @@ export interface ExtractionResult {
  * Process items in concurrent batches.
  * Each batch runs up to `concurrency` items in parallel via Promise.allSettled.
  */
-async function batchProcess<T>(
+export async function batchProcess<T>(
   items: T[],
   concurrency: number,
   fn: (item: T) => Promise<void>,

@@ -395,6 +395,14 @@ export function createCli(): Command {
       }
       if (stats.failedAssetDownloads.length > 0) {
         issues.push(`${stats.failedAssetDownloads.length} asset download${stats.failedAssetDownloads.length > 1 ? "s" : ""} failed`);
+        // Group by error message and show details
+        const errorCounts = new Map<string, number>();
+        for (const fail of stats.failedAssetDownloads) {
+          errorCounts.set(fail.error, (errorCounts.get(fail.error) || 0) + 1);
+        }
+        for (const [error, count] of errorCounts) {
+          issues.push(`    ${count}x: ${error}`);
+        }
       }
       if (stats.failedDetailFetches.length > 0) {
         issues.push(`${stats.failedDetailFetches.length} detail fetch${stats.failedDetailFetches.length > 1 ? "es" : ""} failed`);
