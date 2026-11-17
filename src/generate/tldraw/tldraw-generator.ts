@@ -22,6 +22,7 @@ interface TldrawDocumentRecord {
   id: "document:document";
   typeName: "document";
   name: string;
+  gridSize: number;
   meta: Record<string, unknown>;
 }
 
@@ -182,6 +183,7 @@ export function generateTldraw(board: IRBoard, options: TldrawOptions = {}): str
     id: "document:document",
     typeName: "document",
     name: board.name,
+    gridSize: 10,
     meta: {},
   });
 
